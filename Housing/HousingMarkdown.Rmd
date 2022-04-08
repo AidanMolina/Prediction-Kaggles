@@ -1,0 +1,230 @@
+---
+title: "Housing"
+author: "Aidan Molina and Brian Hatami"
+date: "4/8/2022"
+output: html_document
+---
+## 1
+## Problem and Data Description
+
+Problem: We ask a buyer what they want in their dream house and with the data from other homes sold in the past we predict the price that their dream house will cost
+
+Data Description: We have a total of 1,460 observations in our training data, and we have a similar amount in 1,459 observations in our actual testing data. For our purposes of describing the data appropriately, let’s stick with  our training data. In terms of missing values, most of our columns do not have any missing values, but there are some where missing values account for 80%+ of the variable. This says that we will need to do an ok amount of data cleaning, and dealing with those missing values, before we can do any real statistical analysis of the data. In terms of our data, we’re mostly dealing with integers, floats, and categorical objects.
+```{r}
+library(ggplot2)
+library(ggcorrplot)
+library(corrplot)
+library(dplyr)
+library(stringr)
+library(tidyr)
+
+homeFile <- file.path("..","input","Housing")
+list.files(path = homeFile)
+theme_set(theme_get() + theme(text = element_text(size = 30)))
+train <- read.csv("train (1).csv", header = TRUE)
+summary(train)
+```
+
+This help to capture the basic statistics of every variable we have, such as: mean, standard deviation, min, max, etc. Commenting over each one would bring little value to any analysis, so instead we will mostly be looking over the target variable, sale price, and how the other variables can correlate to the sale price of the house.
+```{r}
+summary(train$SalePrice)
+sd(train$SalePrice)
+```
+
+From this we get that the houses vary in price from ~$35K to ~$755K, with a mean value of ~$180K, and a standard deviation of ~$79K. This indicates that either: a) Prices vary quite significantly from one house to the other, or b) we have a lot of outliers (houses with extremely high price tags) that are skewing the data. So we can make a simple histogram to look at the distribution.
+```{r}
+ggplot(data = train, aes(x=SalePrice)) + 
+geom_histogram(bins = 50) +
+labs(title = "Distribution of House Sale Price",
+  x = "Price in USD", y = "Frequency")
+```
+
+From the histogram, we can clearly see a large right-skew in our distribution with heavy outliers on the upper end. We also see that most houses fall between ~$100K and ~$300K for their sale price.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+--------------------------------------------------------------------------------
+
+## 2
+## Data Preprocessing and Exploratory Data Analysis
+
+## 2.1 Handling Missing Values
+Firstly we need to see which of our variables actually has missing values
+```{r}
+missing_cols <- which(colSums(is.na(train))>0)
+missing_cols
+for(i in missing_cols){
+  print(colnames(train[i]))
+  print(sum(is.na(train[,i])))
+}
+```
+
+From this we can see that we have 19 different variables that have at least one missing value, and we can see the total amount of values that they're missing. The biggest thing to note from this is that there are some variables, like LotFrontage, which will need to be handled as that variable is one which all houses must have (as all properties have at least some amount of feet that is connected to a street), and therefore they can not just be set to 0 without massively skewing the data. So we will need to use imputation methods for this and other similar columns. However for some columns such as Alley, the missing values aren’t actually indicating that they’re missing from the data, the missing values are indicating that there simply isn’t one. So in cases like Alley we will instead rename the NA into the string “No Alley'' and then encode it as a categorical variable for Alley and other similar variables.
+To ensure consistency in our data, for the data points which need to be imputed we will be using the median value of that variable, and group them by the median of a secondary characteristic when applicable. For LotFrontage, we group it by LotShape.
+```{r}
+train <- mutate(group_by(train, LotShape), LotFrontage = ifelse(is.na(LotFrontage), median(LotFrontage, na.rm = TRUE), LotFrontage))
+sum(is.na(train$LotFrontage))
+```
+Then let's replace our Alley variable's missing values
+```{r}
+train$Alley <- replace_na(train$Alley, "No Alley")
+train
+```
+We can now easily see that the data that was missing in Alley has been replaced by our own value.
+
+Knowing what we now know about the data, most null values are categorically equivalent to 0. If a house is missing an alley, they have 0 alleys, and if a house doesn’t have a basement then the basement square footage is 0. Knowing this we can systematically replace parts of other variables in order to align with what we have already done.
+```{r}
+for (i in names(train[, missing_cols])) {
+  if (str_detect(i, "Bsmt") == TRUE) {
+    train[, i][is.na(train[, i])] <- 'No Basement'
+    
+  } else if (str_detect(i, "Garage") == TRUE) {
+    if (i == 'GarageYrBlt'){
+      train[, i][is.na(train[, i])] <- 0
+    } else {
+      train[, i][is.na(train[, i])] <- 'No Garage'
+    }
+    
+  }
+}
+
+train$MasVnrType <- replace_na(train$MasVnrType, "No Veneer")
+train$MasVnrArea <- replace_na(train$MasVnrArea, 0)
+train$FireplaceQu <- replace_na(train$FireplaceQu, "No Fireplace")
+train$PoolQC <- replace_na(train$PoolQC, "No Pool")
+train$Fence <- replace_na(train$Fence, "No Fence")
+train$MiscFeature <- replace_na(train$MiscFeature, "No Misc")
+
+```
+At this point we have a singular missing value in the Electrical variable. This can be easily replaced without skewing data by either dropping the row, or using the mode of the Electrical variable. For our purposes, we will just be using the mode.
+```{r}
+getmode <- function(x){
+  uniqx <- unique(x)
+  uniqx[which.max(tabulate(match(x, uniqx)))]
+}
+train <- mutate(train, Electrical = if_else(is.na(Electrical),
+                                                    getmode(Electrical),
+                                                    Electrical))
+sum(is.na(train))
+```
+
+We have no more missing values in our data set
+
+--------------------------------------------------------------------------------
+
+## 2.2 Exploratory Data Anaylsis
+Now that we have a proper grasp of our data set, and have properly filled in all of the missing values in our data, let’s start analyzing features to see what we can take away from the data.
+Firstly let’s split up the data so that we are able to accurately analyze the continuous/numerical data, and the categorical data.
+```{r}
+numericVariables <- names(train)[which(sapply(train, is.numeric))]
+categoricalVariables <- names(train)[which(sapply(train, is.character))]
+trainingCategorical <- train[which(sapply(train, is.character))]
+trainingNumeric <- train[which(sapply(train, is.numeric))]
+```
+From there we can fairly easily see what the correlation between each numeric variable and the sale price of a home is.
+```{r}
+numericCorrelation <- c()
+for(i in numericVariables){
+  numericCorrelation[i] <- round(cor(trainingNumeric[i], trainingNumeric$SalePrice), 2)
+}
+numericCorrelation
+```
+
+By doing this, each number in numericCorrelation lines up properly with the name of the variable. For our purposes, we’ll be looking specifically through the data that seems to have any noticeable correlation to our sale price:
+
+OveralQual - 0.79
+
+GrLivArea - 0.71
+
+TotalBsmtSF - 0.61
+
+X1stFlrSF - 0.61
+
+GarageCars - 0.64
+
+GarageArea - 0.62
+```{r}
+par(mfrow = c(2,3))
+# Creating the plot
+plot(trainingNumeric$OverallQual, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "OverallQual")
+# Adding line of best fit
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$OverallQual), col = "red", lwd = 3)
+
+plot(trainingNumeric$GrLivArea, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "GrLivArea")
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$GrLivArea), col = "red", lwd = 3)
+
+plot(trainingNumeric$TotalBsmtSF, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "TotalBsmtSF")
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$TotalBsmtSF), col = "red", lwd = 3)
+
+plot(trainingNumeric$X1stFlrSF, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "X1stFlrSF")
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$X1stFlrSF), col = "red", lwd = 3)
+
+plot(trainingNumeric$GarageCars, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "GarageCars")
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$GarageCars), col = "red", lwd = 3)
+
+plot(trainingNumeric$GarageArea, trainingNumeric$SalePrice, pch = 19, col = "lightblue", main = "GarageArea")
+abline(lm(trainingNumeric$SalePrice ~ trainingNumeric$GarageArea), col = "red", lwd = 3)
+```
+
+We can then plot all of these correlation graphs, along with their regression line to get a better look at their correlation between them and sale price. We could do the same for every one of our numeric variables, but when we deal with correlation coefficients that are less than 0.6, we’re stretching too far on their actual correlation. All of our variables are on the X axis, with Sale Price being on the Y axis.
+
+Next we need to look over the categorical data in relation to sale price. This is much harder, as numeric variables can easily be plotted, and the coefficient can easily be found with little to no trouble. To do this we will plot our categorical variables into barplots, as this will allow us to see the spread of our categorical data. By doing this we can get a better idea of which of our values within our variables can have a measurable effect on sale price. So the variables we will be looking at more closely will be:
+
+Neighborhood
+
+LotShape
+
+Condition1
+
+HouseStyle
+
+Exterior1st
+
+Exterior2nd
+
+MasVnrType
+
+ExterQual
+
+Foundation
+
+BsmtQual
+```{r}
+train %>% select(Neighborhood, SalePrice) %>% ggplot(aes(factor(Neighborhood), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('Neighborhoods')
+train %>% select(LotShape, SalePrice) %>% ggplot(aes(factor(LotShape), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('LotShapes')
+train %>% select(Condition1, SalePrice) %>% ggplot(aes(factor(Condition1), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('Condition1')
+train %>% select(HouseStyle, SalePrice) %>% ggplot(aes(factor(HouseStyle), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('HouseStyle')
+train %>% select(Exterior1st, SalePrice) %>% ggplot(aes(factor(Exterior1st), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('Exterior1st')
+train %>% select(Exterior2nd, SalePrice) %>% ggplot(aes(factor(Exterior2nd), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('Exterior2nd')
+train %>% select(MasVnrType, SalePrice) %>% ggplot(aes(factor(MasVnrType), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('MasVnrType')
+train %>% select(ExterQual, SalePrice) %>% ggplot(aes(factor(ExterQual), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('ExterQual')
+train %>% select(Foundation, SalePrice) %>% ggplot(aes(factor(Foundation), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('Foundation')
+train %>% select(BsmtQual, SalePrice) %>% ggplot(aes(factor(BsmtQual), SalePrice)) + geom_boxplot() + theme(axis.text.x = element_text(angle = 90, hjust =1)) + xlab('BsmtQual')
+
+```
+
+It should be noted that for our Neighborhoods' bar graph, since it is harder to read, that North Ames and Northridge Heights are the plots that have the largest average, as well as the largest variance.
+
+Finally, let's explore the correlation between our numeric variables, so that we're able to have a proper grasp on which ones can have an effect on the others.
+```{r}
+correlations <- cor(trainingNumeric)
+
+# correlations
+row_indic <- apply(correlations, 1, function(x) sum(x > 0.3 | x < -0.3) > 1)
+
+correlations<- correlations[row_indic ,row_indic ]
+corrplot(correlations, method="square")
+```
+
+## Acknowledgements
+Kaggle Competition Data:
+https://www.kaggle.com/competitions/house-prices-advanced-regression-techniques 
+
+General Guide for Missing Data and code:
+Akoua Orsot - https://www.kaggle.com/code/akouaorsot/house-price-prediction#3.-Data-Cleaning 
+
+General Guide for Exploratory Data Analysis and code:
+Min02Yam - https://www.kaggle.com/code/min02yam/detailed-exploratory-data-analysis-using-r 
