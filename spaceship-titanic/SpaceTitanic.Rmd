@@ -1,14 +1,22 @@
 ---
 title: "Space Titanic"
 output: html_document
-author: "Bryan Hatami and Aidan"
+author: "Bryan Hatami and Aidan Molina"
+theme: cerulean
 ---
 
-#Problem and Data Description
-Space Titanic:
-Problem: We want to predict whether or not each passenger is going to be transported or not to an alternate dimension during the Spaceship Titanic’s collision with the space time anomaly.
 
-Data Description: The variables in the data that we are given are: PassengerID, HomePlanet (what planet they departed from), CryoSleep (whether or not the passenger is in cryo sleep for the duration of the trip), Cabin (deck number, room number, and starboard or port side of the ship), Destination, Age, and VIP. RoomService, ShoppingMall, Spa, FoodCourt, and VRDeck, which all dictate how much money the person has spent on their trip. Finally the passenger’s Name. All of these variables are then used to predict the last variable of Transported, to determine whether or not they were transported to an alternate dimension. We have ~13,000 total data points, with ~8,700 of them as a part of our training data, and ~4,300 of them as a part of our test data which we will be filling in the Transported variable.
+#Problem and Data Description
+
+Space Titanic:
+
+Problem: 
+
+We want to predict whether or not each passenger is going to be transported or not to an alternate dimension during the Spaceship Titanic’s collision with the space time anomaly.
+
+Data Description: 
+
+The variables in the data that we are given are: PassengerID, HomePlanet (what planet they departed from), CryoSleep (whether or not the passenger is in cryo sleep for the duration of the trip), Cabin (deck number, room number, and starboard or port side of the ship), Destination, Age, and VIP. RoomService, ShoppingMall, Spa, FoodCourt, and VRDeck, which all dictate how much money the person has spent on their trip. Finally the passenger’s Name. All of these variables are then used to predict the last variable of Transported, to determine whether or not they were transported to an alternate dimension. We have ~13,000 total data points, with ~8,700 of them as a part of our training data, and ~4,300 of them as a part of our test data which we will be filling in the Transported variable.
 
 
 ```{r setup, include=FALSE}
@@ -17,6 +25,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #DATA PROCESSING
 
 R Studio allows alot of built in packages that help
+
 Below one can see how we loaded helpful packages in this enviorment 
 ```{r}
 library(ggthemes)
@@ -28,21 +37,23 @@ list.files(path = homeFile)
 theme_set(theme_get() + theme(text = element_text(size = 30)))
 ```
 
-Then we load in the train data set by separating the sets data points apart, creating fields that we will use for calculations and remove the name from the field
--Split cabin into three parts: Deck, Number and Side
--Create spent field that holds RoomService + FoodCourt + ShoppingMall + Spa + VRDeck
--Change Transported, CryoSleep & VIP T/F to 1 and 0 respectfully 
--remove the name field as it doesn't affect data
+(Split cabin into three parts: Deck, Number and Side )
+
+(Create spent field that holds: RoomService + FoodCourt + ShoppingMall + Spa + VRDeck Change Transported)
+
+(CryoSleep & VIP: T/F to 1 and 0 respectfully)
+
+(Remove: the name field as it doesn’t affect data)
 ```{r}
 train <- 
     read_csv("train.csv") %>%
     separate(Cabin, into=c('Deck', 'Room', 'Side'), sep="/") %>%
     mutate(Spent = RoomService + FoodCourt + ShoppingMall + Spa + VRDeck) %>%
-    mutate(TransportedFlag = ifelse(Transported, 1, 0), 
-           CryoSleepFlag = ifelse(CryoSleep, 1, 0), 
-           VIPFlag = ifelse(VIP, 1, 0)) %>%
-    select(PassengerId:CryoSleep, CryoSleepFlag, Deck:VIP, 
-          VIPFlag, RoomService:VRDeck, Spent,Transported, TransportedFlag)
+    mutate(VarTrans = ifelse(Transported, 1, 0), 
+           VarCrySleep = ifelse(CryoSleep, 1, 0), 
+           VarVIP = ifelse(VIP, 1, 0)) %>%
+    select(PassengerId:CryoSleep, VarCrySleep, Deck:VIP, 
+          VarVIP, RoomService:VRDeck, Spent,Transported, VarTrans)
 head(train)
 spec(train)
 train
@@ -50,7 +61,15 @@ train
 Above you can see a full column specification for this data set.
 
 
+We then Get the Summary of the train data
+```{r}
+summary(train)
+```
+
+
+
 #Handling Missing Values
+
 First thing we want to do is find what columns hold missing values and how many each hold
 ```{r}
 missing_cols <- which(colSums(is.na(train))>0)
@@ -63,7 +82,7 @@ for(i in missing_cols){
 ```
 
 
-We then change the missing values to be replaced with the most common value that the column holds
+We then change the missing values to be replaced with the most common value that the column holds either by mode function or sort table function
 ```{r}
 getmode <- function(v) {
  uniqv <- unique(v)
@@ -73,21 +92,21 @@ getmode <- function(v) {
 
 train[["HomePlanet"]][is.na(train[["HomePlanet"]])] <- tail(names(sort(table(train$HomePlanet))), 1)
 train[["CryoSleep"]][is.na(train[["CryoSleep"]])] <- tail(names(sort(table(train$CryoSleep))), 1)
-train[["CryoSleepFlag"]][is.na(train[["CryoSleepFlag"]])] <- as.numeric(getmode(train$CryoSleepFlag))
+train[["VarCrySleep"]][is.na(train[["VarCrySleep"]])] <- as.numeric(getmode(train$VarCrySleep))
 train[["Deck"]][is.na(train[["Deck"]])] <- tail(names(sort(table(train$Deck))), 1)
 train[["Room"]][is.na(train[["Room"]])] <- as.numeric(getmode(train$Room))
 train[["Side"]][is.na(train[["Side"]])] <- tail(names(sort(table(train$Side))), 1)
 train[["Destination"]][is.na(train[["Destination"]])] <- tail(names(sort(table(train$Destination))), 1)
 train[["Age"]][is.na(train[["Age"]])] <- as.numeric(getmode(train$Age))
 train[["VIP"]][is.na(train[["VIP"]])] <- tail(names(sort(table(train$VIP))), 1)
-train[["VIPFlag"]][is.na(train[["VIPFlag"]])] <- as.numeric(getmode(train$VIPFlag))
+train[["VarVIP"]][is.na(train[["VarVIP"]])] <- as.numeric(getmode(train$VarVIP))
 train[["RoomService"]][is.na(train[["RoomService"]])] <- as.numeric(getmode(train$RoomService))
 train[["FoodCourt"]][is.na(train[["FoodCourt"]])] <- as.numeric(getmode(train$FoodCourt))
 train[["ShoppingMall"]][is.na(train[["ShoppingMall"]])] <- as.numeric(getmode(train$ShoppingMall))
 train[["Spa"]][is.na(train[["Spa"]])] <- as.numeric(getmode(train$Spa))
 train[["VRDeck"]][is.na(train[["VRDeck"]])] <- as.numeric(getmode(train$VRDeck))
 train[["Spent"]][is.na(train[["Spent"]])] <- as.numeric(getmode(train$Spent))
-train[["TransportedFlag"]][is.na(train[["TransportedFlag"]])] <- as.numeric(getmode(train$TransportedFlag))
+train[["VarTrans"]][is.na(train[["VarTrans"]])] <- as.numeric(getmode(train$VarTrans))
 
 ```
 
@@ -95,145 +114,159 @@ train[["TransportedFlag"]][is.na(train[["TransportedFlag"]])] <- as.numeric(getm
 
 #Exploratory Data Analysis
 
-Look at the Transported against CryoSleep
+Look at the Transported against CryoSleep with a geometric bar plot
 ```{r}
 table(train$CryoSleep, train$Transported)
 ```
 ```{r}
 options(repr.plot.width = 25) 
-
-train %>%
-    ggplot(aes(x=Transported, fill=CryoSleep)) +
-        geom_bar()
+train %>% ggplot(aes(x=Transported, fill=CryoSleep)) + geom_bar()
 
 ```
 
-Looking at the Transported individuals against the Amount they spent across the board
+Looking at the Transported individuals against the Amount they spent across the board with a box plot
 ```{r}
 options(repr.plot.width = 48, repr.plot.height = 15) 
 
-train %>%
-    ggplot(aes(x=Spent, color=Transported)) +
-        geom_boxplot()
+train %>% ggplot(aes(x=Spent, color=Transported)) + geom_boxplot()
 ```
 
-Look at the data from the Side and the Deck
+Look at the data from the Side and the Deck with a table
 ```{r}
-table(train$Deck, train$Side)
+table(train$Side, train$Deck)
 ```
 
-Looking at the Transported individuals against the Deck they were on
+Looking at the Transported individuals against the Deck they were on with a table
 ```{r}
-table(train$Deck, train$Transported)
+table(train$Transported, train$Deck)
 ```
 
-Looking at the Transported individuals against the Side they were on
+Looking at the Transported individuals against the Side they were on with a table
 ```{r}
-table(train$Side, train$Transported)
+table(train$Transported, train$Side)
 ```
 
 Home Planet and Destination
-Looking at the Transported individuals against their Home Planet 
+
+Looking at the Transported individuals against their Home Planet with a table
 ```{r}
-table(train$HomePlanet, train$Transported)
+table(train$Transported, train$HomePlanet)
 ```
 
-Looking at the Transported individuals against their Destination 
+Looking at the Transported individuals against their Destination with a table
 ```{r}
-table(train$Destination, train$Transported)
+table(train$Transported, train$Destination)
 ```
-Looking at the Home Planet of individuals against their Destination
+Looking at the Home Planet of individuals against their Destination with a table
 ```{r}
-table(train$HomePlanet, train$Destination)
+table(train$Destination, train$HomePlanet)
 ```
 
 Age Data
 
-Looking at the Transported individuals against their Age 
+Looking at the Transported individuals against their Age with a histogram 
 ```{r}
-options(repr.plot.width = 48, repr.plot.height = 30) 
-graphAge <- train %>%
+options(repr.plot.width = 50, repr.plot.height = 32) 
+agePlots <- train %>%
     ggplot(aes(x=Age, fill=Transported)) +
-    geom_histogram(binwidth=5) +
-    theme(text = element_text(size = 20))
-graphAge
+    geom_histogram(binwidth=6) +
+    theme(text = element_text(size = 31))
+agePlots
+```
+Looking at the Age of an individual against the Home Planet they are from 
+```{r}
+agePlots + facet_grid(HomePlanet ~ .)
 ```
 
 Looking at the Age of an individual against the Side they were on 
 ```{r}
-graphAge + facet_grid(Side ~ .)
-```
-
-Looking at the Age of an individual against if they were VIP or not
-```{r}
-graphAge + facet_grid(VIP ~ .)
+agePlots + facet_grid(Side ~ .)
 ```
 
 Looking at the Age of an individual against the Deck they were on 
 ```{r}
-graphAge + facet_grid(Deck ~ .)
-```
-
-Looking at the Age of an individual against the Home Planet they are from 
-```{r}
-graphAge + facet_grid(HomePlanet ~ .)
+agePlots + facet_grid(Deck ~ .)
 ```
 
 Looking at the Age of an individual against their Destination
 ```{r}
-graphAge + facet_grid(Destination ~ .)
+agePlots + facet_grid(Destination ~ .)
 ```
 
-
-Correlation
+Looking at the Age of an individual against if they were VIP or not
 ```{r}
-#relationships <- 
-#    train %>% 
-#      select('CryoSleepFlag','VIPFlag','Age','RoomService', #'FoodCourt','ShoppingMall','Spa','VRDeck','Spent','TransportedFlag') %>%
-#      cor()
-#ggcorrplot(train, type="upper", lab=TRUE) + theme(text = element_text(size = 20))
-#
+agePlots + facet_grid(VIP ~ .)
 ```
 
+
+Correlation between all the values
 ```{r}
-#round(relationships, 2)
+corlationBeween <- 
+    train %>% select('VarCrySleep','VarVIP','Age','RoomService', 'FoodCourt','ShoppingMall','Spa','VRDeck','Spent','VarTrans') %>% cor()
+ggcorrplot(corlationBeween, type="upper", lab=TRUE) + theme(text = element_text(size = 20))
+
 ```
+
 
 #Algorithm and Methodology
+
 For this section we used basic algorithms.
 To stop NAs from affecting the data we used a mode function to find the most common numeric value in the column to replace it with and we use a sort function to find the most common value in a column to replace it with.
 We used R bulit in plot functions to set the data against each other so that we could get a good understanding of what values will be the most important to look at when predicting what passangers were transported
 
 
 #Experiments and Results
+
 When looking at the experiments we ran earlier we can see a few things about the data. 
+
 First we looked at the Transported against CryoSleep by making a box plot and table where one can see the majority of people who were in CryoSleep were also Transported. 
+
 Then we looked at the Transported individuals against the Amount they spent across the board by making a box plot where one can see those who were transported trended to spend less but the margin wasnt large.
+
 We then looked at the data from the Side and the Deck by making a table and we could see that these values were pretty even on both sides on the spaceship.
+
 Then we looked at the Transported individuals against the Deck they were on by making a table and noticed that on dec A, D and G there was little difference, Dec B and C more than half got transported, and dec E F and T had majorty of individuals not transported.
+
 Then we looked at the Transported individuals against the Side they were on by a table and noticed that majority of individuals on P didnt transport but majority on S did.
+
 We then Looked at the Transported individuals against their Home Planet by a table and noticed that a majoirty of people are earth were not transported while majoirty of people from Europa and Mars were. Mars alot more balanced but Europa is almost half transported.
+
 The we Looked at the Transported individuals against their Destination by a table and noticed that majority of people travling to 55 Cancri e were transported while PSO J318.5-22 was more even and TRAPPIST-1e had a majorty of people not transported.
+
 Then we looked at the Home Planet of individuals against their Destination by a table and we noticed that majority of people on Earth were traveling to TRAPPIST-1e and the same for the other planets as well. Europa and Mars both had a large difference in travel between 55 Cancri e and PSO J318.5-22 with majority traveling to 55 Cancri e. 
+
 We then Looked at the Transported individuals against their Age by a histogram plot and noticed that there was majority of people around the age of 20-25 and those individuals also had the highest amount to not be transported.
+
 Then we looked at the Age of an individual against the Side they were on by a histogram plot and again saw the age of 20-25 having the hightest amount of people not transported and population. 
+
 We then looked  at the Age of an individual against if they were VIP or not by a historgram and noticed that alot less people were vip on the spaceship and the data from peoples age being transported had the same outcome.
+
 We then Looked at the Age of an individual against the Deck they were on by a historgam plot and noticed that B, C, F and G decks seemed to have more people get transported while A, D, E, and G had less people transported. All spikes for the most transported seemed to fall under that 20-25 mark.
+
 We then looked at the Age of an individual against the Home Planet they are from by a historgram and noticed that Earth seemed to have a larger difference when it came to those who got transported and who didnt get transported especially by at around to 20-25 age. When looking at Europa it seems that very little children were with this group and the difference from transported to not transported is very close split. When looking at Mars it seemed to have a larger difference when it came to those who got transported and who didnt get transported especially by at around to 20-25 age.
+
 When looking at the Age of an individual against their Destination its seems that the again majoity of those who were not transported were from the ages of 20-25 but Trappist-1e had the biggest difference while 55 Cancri e & PSO J318.5-22 were closer to being even. 
+
+The we got the correlation between all the values by looking at the numeric data in a cor plot. From here we noticed that being transported a being in cryosleep have a strong correlation, how much one spend and the food court, spa and vrdeck have a string correlation but they don't have a strong correlation between being transported.  
+
+
 
 
 #Summary and Conclusions
 
-To summarize this section we could say that there is some strong correlation between certain data points and if they were transported or not. We saw that majority of people in Cyposleep were transported, that the amount they spent played a role but not too large, that the side one was one seemed to have an affect, that certain side of the deck one was on could have played a role, the planet one was traveling to played a role, the age they are played a role and the planet they were from played a role.
+To summarize this section we could say that there is some strong correlation between certain data points and if they were transported or not. We saw that majority of people in Cyposleep were transported, that the amount they spent played a role but not too large, that the side one was one seemed to have an affect, that certain side of the deck one was on could have played a role, the planet one was traveling to played a role, the age they are played a role and the planet they were from played a role, and if they were in cryosleep played a large role.
 
-From this information we conclude that there will a higher change of those who were transported were under the age of 10 and over the age of 30, that spent less than other passages, lived on Europa and Mars, were traveling to 55 Cancri e & PSO J318.5-22, who were on side P and who were on Deck C and D
+From this information we conclude that there will a higher change of those who were transported were under the age of 10 and over the age of 30, that spent less than other passages, lived on Europa and Mars, were traveling to 55 Cancri e & PSO J318.5-22, who were in cryosleep, who were on side P and who were on Deck C and D
+
+
 
 
 #Acknowledgments
 
 Kaggle - files and data
+
 https://www.kaggle.com/competitions/spaceship-titanic/overview
 
 Help with understanding on how to start and what to look for in the data set
+
 https://www.kaggle.com/code/negoto/r-accurate-glm-aglm-on-spaceship-titanic
