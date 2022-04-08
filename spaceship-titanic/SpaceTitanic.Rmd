@@ -267,6 +267,6 @@ Kaggle - files and data
 
 https://www.kaggle.com/competitions/spaceship-titanic/overview
 
-Help with understanding on how to start and what to look for in the data set
+Help with understanding on how to start and what to look for in the data set and to help with code on graphs/plots
 
 https://www.kaggle.com/code/negoto/r-accurate-glm-aglm-on-spaceship-titanic
